@@ -2144,4 +2144,4 @@ class SubredditWiki(object):
         """
         url = API_PATH['wiki_revisions'].format(subreddit=self.subreddit)
         return WikiPage._revision_generator(
-            self.subreddit, url, generator_kwargs)
+            self.subreddit, url, **generator_kwargs)

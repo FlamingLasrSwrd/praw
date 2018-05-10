@@ -76,7 +76,7 @@ def permissions_string(permissions, known_permissions):
     return ','.join(to_set)
 
 
-def stream_generator(function, pause_after=None, skip_existing=False, item_limit=100):
+def stream_generator(function, pause_after=None, skip_existing=False, limit=100, **generator_kwargs):
     """Yield new items from ListingGenerators and ``None`` when paused.
 
     :param function: A callable that returns a ListingGenerator, e.g.
@@ -153,38 +153,42 @@ def stream_generator(function, pause_after=None, skip_existing=False, item_limit
     """
     before_fullname = None
     exponential_counter = ExponentialCounter(max_counter=16)
-    seen_fullnames = BoundedSet(3*item_limit)
-    without_before_counter = 0
-    responses_without_new = 0
-    valid_pause_after = pause_after is not None
-    while True:
-        found = False
-        newest_fullname = None
-        limit = item_limit
-        if before_fullname is None:
-            limit -= without_before_counter
-            without_before_counter = (without_before_counter + 1) % 30
-        for item in reversed(list(function(
-                limit=limit, params={'before': before_fullname}))):
-            if item.fullname in seen_fullnames:
-                continue
-            found = True
-            seen_fullnames.add(item.fullname)
-            newest_fullname = item.fullname
-            if not skip_existing:
-                yield item
-        before_fullname = newest_fullname
-        skip_existing = False
-        if valid_pause_after and pause_after < 0:
-            yield None
-        elif found:
-            exponential_counter.reset()
-            responses_without_new = 0
-        else:
-            responses_without_new += 1
-            if valid_pause_after and responses_without_new > pause_after:
+    if limit is None:
+        for item in reversed(list(function(limit=limit,**generator_kwargs))):
+            yield item
+    else:
+        seen_fullnames = BoundedSet(3*limit)
+
+        without_before_counter = 0
+        responses_without_new = 0
+        valid_pause_after = pause_after is not None
+        while True:
+            found = False
+            newest_fullname = None
+            if before_fullname is None:
+                limit -= without_before_counter
+                without_before_counter = (without_before_counter + 1) % 30
+            for item in reversed(list(function(
+                    limit=limit, params={'before': before_fullname}, **generator_kwargs))):
+                if item.fullname in seen_fullnames:
+                    continue
+                found = True
+                seen_fullnames.add(item.fullname)
+                newest_fullname = item.fullname
+                if not skip_existing:
+                    yield item
+            before_fullname = newest_fullname
+            skip_existing = False
+            if valid_pause_after and pause_after < 0:
+                yield None
+            elif found:
                 exponential_counter.reset()
                 responses_without_new = 0
-                yield None
             else:
-                time.sleep(exponential_counter.counter())
+                responses_without_new += 1
+                if valid_pause_after and responses_without_new > pause_after:
+                    exponential_counter.reset()
+                    responses_without_new = 0
+                    yield None
+                else:
+                    time.sleep(exponential_counter.counter())
